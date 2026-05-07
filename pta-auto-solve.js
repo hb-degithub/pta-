@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PTA 自动答题 AI版
 // @namespace    http://tampermonkey.net/
-// @version      3.4
-// @description  PTA自动答题脚本，支持AI自动回答编程题（逐字模拟输入绕过粘贴限制）、选择题按文本匹配，自动切换题目
+// @version      3.5
+// @description  PTA自动答题脚本，支持AI自动回答编程题（逐字模拟输入绕过粘贴限制）、选择题按文本匹配、自动切换题目、提交后自动检测判题结果并修正
 // @author       You
 // @match        https://pintia.cn/*
 // @match        https://*.pintia.cn/*
