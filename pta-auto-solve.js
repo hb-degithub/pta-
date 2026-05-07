@@ -575,7 +575,7 @@
                 '运行错误', '段错误',
                 '未能在规定时间内运行结束',
                 '超时', 'Time Limit',
-                '内存', '超限', 'Memory Limit',
+                '使用了超过限制的内存', '内存', '超限', 'Memory Limit',
                 'Accepted', 'Compile Error', 'Wrong Answer', 'Runtime Error',
                 '答案正确', '通过', '继续努力', '错误'
             ];
