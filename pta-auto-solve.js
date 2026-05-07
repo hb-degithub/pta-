@@ -566,28 +566,38 @@
     // ==========================================
     async function waitForJudgeResult(timeout = 30000) {
         return new Promise((resolve) => {
-            const JUDGE_KEYWORDS = ['答案正确', '部分正确', '编译错误', '答案错误', '运行错误', '通过',
-                                    'Accepted', 'Compile Error', 'Wrong Answer', 'Runtime Error',
-                                    'Time Limit', 'Memory Limit', '恭喜', '继续努力'];
+            const JUDGE_KEYWORDS = [
+                '恭喜', '您通过了这道题',
+                '部分正确', '只通过了部分测试点',
+                '无法完成编译',
+                '未能对评测系统的数据返回正确的结果',
+                '格式不符合要求',
+                '运行错误', '段错误',
+                '超时', 'Time Limit',
+                '内存', '超限', 'Memory Limit',
+                'Accepted', 'Compile Error', 'Wrong Answer', 'Runtime Error',
+                '答案正确', '通过', '继续努力', '错误'
+            ];
 
             const checkResult = () => {
-                // 1. 检测已知的结果容器（部分正确/错误等）
-                const container = document.querySelector('.container_NUWn9');
-                if (container && !container.classList.contains('hidden')) {
+                // 1. 检测已知的结果容器（支持多个 container_NUWn9）
+                const containers = document.querySelectorAll('.container_NUWn9');
+                for (const container of containers) {
+                    if (container.classList.contains('hidden')) continue;
                     const textEl = container.querySelector('.pc-text-raw');
                     const hint = container.querySelector('.hint_pB8O9');
                     const text = textEl?.textContent?.trim() || hint?.textContent?.trim() || '';
                     if (text) return { text, element: container };
                 }
 
-                // 2. 扫描页面上包含判题关键词的可见元素（兜底：全部正确等可能用不同容器）
+                // 2. 扫描页面上包含判题关键词的可见元素（兜底）
                 const allElements = document.querySelectorAll('div, span, p, h1, h2, h3, h4, h5, h6, li, td, th, label, strong, em, b, i');
                 for (const el of allElements) {
                     if (isScriptElement(el)) continue;
                     const text = el.textContent?.trim();
-                    if (!text || text.length > 200) continue; // 避免扫描大段文本
+                    if (!text || text.length > 200) continue;
                     const rect = el.getBoundingClientRect();
-                    if (rect.width === 0 || rect.height === 0) continue; // 不可见
+                    if (rect.width === 0 || rect.height === 0) continue;
                     for (const kw of JUDGE_KEYWORDS) {
                         if (text.includes(kw)) {
                             return { text, element: el };
@@ -624,17 +634,20 @@
     function parseJudgeStatus(text) {
         if (!text) return { passed: false, status: 'unknown', canFix: false };
 
-        if (text.includes('答案正确') || text.includes('通过') || text.includes('Accepted') || text.includes('恭喜')) {
+        if (text.includes('答案正确') || text.includes('您通过了这道题') || text.includes('通过') || text.includes('Accepted') || text.includes('恭喜')) {
             return { passed: true, status: 'accepted', canFix: false };
         }
-        if (text.includes('编译错误') || text.includes('Compile Error')) {
+        if (text.includes('编译错误') || text.includes('无法完成编译') || text.includes('Compile Error')) {
             return { passed: false, status: 'compile_error', canFix: true };
         }
-        if (text.includes('部分正确') || text.includes('部分通过')) {
+        if (text.includes('部分正确') || text.includes('只通过了部分测试点') || text.includes('部分通过')) {
             return { passed: false, status: 'partial', canFix: true };
         }
-        if (text.includes('答案错误') || text.includes('Wrong Answer')) {
+        if (text.includes('答案错误') || text.includes('未能对评测系统的数据返回正确的结果') || text.includes('Wrong Answer')) {
             return { passed: false, status: 'wrong_answer', canFix: true };
+        }
+        if (text.includes('格式不符合要求')) {
+            return { passed: false, status: 'format_error', canFix: true };
         }
         if (text.includes('超时') || text.includes('Time Limit')) {
             return { passed: false, status: 'time_limit', canFix: true };
