@@ -516,7 +516,10 @@
     }
 
     // 导航
-    function nextQuestion() {
+    async function nextQuestion() {
+        // 切换题面前清空编辑器，避免"未保存更改"弹窗拦截
+        const editor = document.querySelector('.cm-content[contenteditable="true"]');
+        if (editor) await clearEditor(editor);
         const nextBtn = findButton(['下一题', 'Next', 'next']);
         if (nextBtn && !nextBtn.disabled) {
             nextBtn.click();
@@ -525,7 +528,10 @@
         return false;
     }
 
-    function prevQuestion() {
+    async function prevQuestion() {
+        // 切换题面前清空编辑器，避免"未保存更改"弹窗拦截
+        const editor = document.querySelector('.cm-content[contenteditable="true"]');
+        if (editor) await clearEditor(editor);
         const prevBtn = findButton(['上一题', 'Prev', 'previous']);
         if (prevBtn && !prevBtn.disabled) {
             prevBtn.click();
@@ -560,14 +566,35 @@
     // ==========================================
     async function waitForJudgeResult(timeout = 30000) {
         return new Promise((resolve) => {
+            const JUDGE_KEYWORDS = ['答案正确', '部分正确', '编译错误', '答案错误', '运行错误', '通过',
+                                    'Accepted', 'Compile Error', 'Wrong Answer', 'Runtime Error',
+                                    'Time Limit', 'Memory Limit', '恭喜', '继续努力'];
+
             const checkResult = () => {
+                // 1. 检测已知的结果容器（部分正确/错误等）
                 const container = document.querySelector('.container_NUWn9');
                 if (container && !container.classList.contains('hidden')) {
                     const textEl = container.querySelector('.pc-text-raw');
                     const hint = container.querySelector('.hint_pB8O9');
                     const text = textEl?.textContent?.trim() || hint?.textContent?.trim() || '';
-                    return { text, element: container };
+                    if (text) return { text, element: container };
                 }
+
+                // 2. 扫描页面上包含判题关键词的可见元素（兜底：全部正确等可能用不同容器）
+                const allElements = document.querySelectorAll('div, span, p, h1, h2, h3, h4, h5, h6, li, td, th, label, strong, em, b, i');
+                for (const el of allElements) {
+                    if (isScriptElement(el)) continue;
+                    const text = el.textContent?.trim();
+                    if (!text || text.length > 200) continue; // 避免扫描大段文本
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width === 0 || rect.height === 0) continue; // 不可见
+                    for (const kw of JUDGE_KEYWORDS) {
+                        if (text.includes(kw)) {
+                            return { text, element: el };
+                        }
+                    }
+                }
+
                 return null;
             };
 
@@ -1035,7 +1062,7 @@
 
                     if (!state.isAutoRunning) return;
 
-                    if (nextQuestion()) {
+                    if (await nextQuestion()) {
                         setTimeout(() => runAI(true), 1000);
                     } else {
                         const config = getConfig();
@@ -1857,6 +1884,31 @@
     function init() {
         GM_setValue('pta_panel_left', null);
         GM_setValue('pta_panel_top', null);
+
+        // 自动确认各种弹窗（未保存更改、确认离开等）
+        const origConfirm = window.confirm;
+        window.confirm = function(msg) {
+            if (msg && (msg.includes('未保存') || msg.includes('提交') || msg.includes('离开') || msg.includes('确认'))) {
+                log('自动确认弹窗: ' + msg);
+                return true;
+            }
+            return origConfirm.apply(this, arguments);
+        };
+        window.alert = function(msg) {
+            log('拦截弹窗: ' + msg);
+        };
+        // 清除已有的 beforeunload 处理，阻止"未保存更改"对话框
+        window.onbeforeunload = null;
+        // 拦截后续注册的 beforeunload 监听器
+        const origAddEventListener = window.addEventListener;
+        window.addEventListener = function(type, listener, options) {
+            if (type === 'beforeunload') {
+                log('拦截 beforeunload 监听器注册');
+                return;
+            }
+            return origAddEventListener.call(this, type, listener, options);
+        };
+
         createGUI();
         startObserver();
         // 初始检测
