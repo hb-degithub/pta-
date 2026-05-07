@@ -1489,7 +1489,7 @@
         // ==========================================
         // 拖拽（直接用 left/top，避免 right + transform 冲突）
         // ==========================================
-        let isDragging = false, hasMoved = false;
+        let isDragging = false, hasMoved = false, justDragged = false;
         let dragStartTime = 0;
         let dragOffsetX, dragOffsetY;
         let isMinimized = GM_getValue('pta_isMinimized', false);
@@ -1540,9 +1540,11 @@
             const wasDragging = isDragging && hasMoved;
             isDragging = false;
             if (wasDragging) {
+                justDragged = true;
                 const rect = panel.style.display === 'none' ? minIcon.getBoundingClientRect() : panel.getBoundingClientRect();
                 GM_setValue('pta_panel_left', rect.left);
                 GM_setValue('pta_panel_top', rect.top);
+                setTimeout(() => { justDragged = false; }, 50);
             }
         }
 
@@ -1570,7 +1572,7 @@
         });
 
         minIcon.addEventListener('click', (e) => {
-            if (hasMoved && (Date.now() - dragStartTime) < 300) return;
+            if (justDragged) return;
             minIcon.style.display = 'none';
             panel.style.display = 'block';
             GM_setValue('pta_isMinimized', false);
