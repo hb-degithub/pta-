@@ -440,9 +440,13 @@
         let editor = document.querySelector('.cm-content[contenteditable="true"]');
 
         if (editor) {
-            showStatus('正在清空编辑器...');
-            await clearEditor(editor);
-            await sleep(200);
+            const view = findCodeMirrorView(editor);
+            const hasContent = view ? view.state.doc.length > 0 : editor.textContent.trim().length > 0;
+            if (hasContent) {
+                showStatus('正在清空编辑器...');
+                await clearEditor(editor);
+                await sleep(200);
+            }
 
             showStatus('正在模拟输入代码...');
             await simulateTyping(editor, code);
@@ -947,11 +951,7 @@
                 resultBox.classList.add('visible');
             }
 
-            if (isAuto) {
-                await fillCurrentAnswer();
-            } else {
-                showStatus('AI 已返回答案，点击「填入答案」使用');
-            }
+            await fillCurrentAnswer();
 
             if (isAuto) {
                 const waitForTyping = async () => {
@@ -1459,7 +1459,7 @@
 
         function dragStart(e) {
             if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
-            const rect = panel.getBoundingClientRect();
+            const rect = panel.style.display === 'none' ? minIcon.getBoundingClientRect() : panel.getBoundingClientRect();
             dragOffsetX = e.clientX - rect.left;
             dragOffsetY = e.clientY - rect.top;
             isDragging = true;
@@ -1471,7 +1471,7 @@
             const wasDragging = isDragging && hasMoved;
             isDragging = false;
             if (wasDragging) {
-                const rect = panel.getBoundingClientRect();
+                const rect = panel.style.display === 'none' ? minIcon.getBoundingClientRect() : panel.getBoundingClientRect();
                 GM_setValue('pta_panel_left', rect.left);
                 GM_setValue('pta_panel_top', rect.top);
             }
