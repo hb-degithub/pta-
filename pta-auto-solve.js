@@ -576,9 +576,17 @@
                 '未能在规定时间内运行结束',
                 '超时', 'Time Limit',
                 '使用了超过限制的内存', '内存', '超限', 'Memory Limit',
+                '多种错误',
+                '非零返回',
+                '浮点错误',
+                '输出超限',
+                '内部错误',
                 'Accepted', 'Compile Error', 'Wrong Answer', 'Runtime Error',
                 '答案正确', '通过', '继续努力', '错误'
             ];
+
+            // 中间状态，检测到应继续等待
+            const WAITING_KEYWORDS = ['等待评测', '正在评测', '尚未评测'];
 
             const checkResult = () => {
                 // 1. 检测已知的结果容器（支持多个 container_NUWn9）
@@ -599,6 +607,14 @@
                     if (!text || text.length > 200) continue;
                     const rect = el.getBoundingClientRect();
                     if (rect.width === 0 || rect.height === 0) continue;
+
+                    // 跳过中间状态（等待评测、正在评测）
+                    let isWaiting = false;
+                    for (const kw of WAITING_KEYWORDS) {
+                        if (text.includes(kw)) { isWaiting = true; break; }
+                    }
+                    if (isWaiting) continue;
+
                     for (const kw of JUDGE_KEYWORDS) {
                         if (text.includes(kw)) {
                             return { text, element: el };
@@ -656,8 +672,20 @@
         if ((text.includes('内存') && text.includes('超限')) || text.includes('Memory Limit')) {
             return { passed: false, status: 'memory_limit', canFix: true };
         }
-        if (text.includes('运行错误') || text.includes('运行时发生错误') || text.includes('Runtime Error') || text.includes('段错误') || text.includes('堆栈溢出')) {
+        if (text.includes('运行错误') || text.includes('运行时发生错误') || text.includes('Runtime Error') || text.includes('段错误') || text.includes('堆栈溢出') || text.includes('浮点错误')) {
             return { passed: false, status: 'runtime_error', canFix: true };
+        }
+        if (text.includes('多种错误')) {
+            return { passed: false, status: 'multiple_error', canFix: true };
+        }
+        if (text.includes('非零返回')) {
+            return { passed: false, status: 'nonzero_return', canFix: true };
+        }
+        if (text.includes('输出超限')) {
+            return { passed: false, status: 'output_limit', canFix: true };
+        }
+        if (text.includes('内部错误')) {
+            return { passed: false, status: 'internal_error', canFix: false };
         }
         if (text.includes('错误')) {
             return { passed: false, status: 'wrong_answer', canFix: true };
