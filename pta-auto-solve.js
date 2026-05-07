@@ -552,6 +552,76 @@
     }
 
     // ==========================================
+    // 4.5 判题结果检测
+    // ==========================================
+    async function waitForJudgeResult(timeout = 30000) {
+        return new Promise((resolve) => {
+            const checkResult = () => {
+                const container = document.querySelector('.container_NUWn9');
+                if (container && !container.classList.contains('hidden')) {
+                    const textEl = container.querySelector('.pc-text-raw');
+                    const hint = container.querySelector('.hint_pB8O9');
+                    const text = textEl?.textContent?.trim() || hint?.textContent?.trim() || '';
+                    return { text, element: container };
+                }
+                return null;
+            };
+
+            let result = checkResult();
+            if (result) {
+                resolve(result);
+                return;
+            }
+
+            const observer = new MutationObserver(() => {
+                result = checkResult();
+                if (result) {
+                    observer.disconnect();
+                    resolve(result);
+                }
+            });
+
+            observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+
+            setTimeout(() => {
+                observer.disconnect();
+                resolve(null);
+            }, timeout);
+        });
+    }
+
+    function parseJudgeStatus(text) {
+        if (!text) return { passed: false, status: 'unknown', canFix: false };
+
+        if (text.includes('答案正确') || text.includes('通过') || text.includes('Accepted') || text.includes('恭喜')) {
+            return { passed: true, status: 'accepted', canFix: false };
+        }
+        if (text.includes('编译错误') || text.includes('Compile Error')) {
+            return { passed: false, status: 'compile_error', canFix: true };
+        }
+        if (text.includes('部分正确') || text.includes('部分通过')) {
+            return { passed: false, status: 'partial', canFix: true };
+        }
+        if (text.includes('答案错误') || text.includes('Wrong Answer')) {
+            return { passed: false, status: 'wrong_answer', canFix: true };
+        }
+        if (text.includes('超时') || text.includes('Time Limit')) {
+            return { passed: false, status: 'time_limit', canFix: true };
+        }
+        if ((text.includes('内存') && text.includes('超限')) || text.includes('Memory Limit')) {
+            return { passed: false, status: 'memory_limit', canFix: true };
+        }
+        if (text.includes('运行错误') || text.includes('Runtime Error') || text.includes('段错误')) {
+            return { passed: false, status: 'runtime_error', canFix: true };
+        }
+        if (text.includes('错误')) {
+            return { passed: false, status: 'wrong_answer', canFix: true };
+        }
+
+        return { passed: false, status: 'unknown', canFix: false };
+    }
+
+    // ==========================================
     // 5. AI 交互（带重试）
     // ==========================================
     async function callAIAPIWithRetry(questionContext, maxRetries = 2) {
@@ -699,6 +769,79 @@
         return success;
     }
 
+    function callAutoFixAPI(errorText) {
+        return new Promise((resolve, reject) => {
+            if (!currentAnswer) {
+                reject(new Error('暂无 AI 结果'));
+                return;
+            }
+
+            const config = getConfig();
+            const url = document.getElementById('cfg-url')?.value.trim() || config.apiUrl;
+            const token = document.getElementById('cfg-token')?.value.trim() || config.apiToken;
+            const model = document.getElementById('cfg-model')?.value.trim() || config.model;
+            const question = getQuestionContext();
+            const langMap = {
+                c: 'C', cpp: 'C++', java: 'Java', python: 'Python',
+                python3: 'Python3', javascript: 'JavaScript', go: 'Go',
+                rust: 'Rust', csharp: 'C#', php: 'PHP', ruby: 'Ruby', sql: 'SQL'
+            };
+            const codeLanguage = document.getElementById('cfg-lang')?.value || config.codeLanguage;
+            const langName = langMap[codeLanguage] || codeLanguage || 'C';
+
+            let prompt = '';
+            if (question.type === 'sql') {
+                prompt = `你是一个SQL专家。以下SQL语句在提交时出现了错误，请根据错误信息修正。\n\n题目：\n${question.text}\n\n当前SQL：\n${currentAnswer}\n\n错误信息：\n${errorText}\n\n要求：\n- 只返回修正后的SQL语句\n- SQL简洁高效\n- 不要包含任何解释或 Markdown 标记`;
+            } else if (question.type === 'custom') {
+                const customLang = document.getElementById('cfg-custom-lang')?.value?.trim() || '代码';
+                prompt = `你是一个编程助手。以下${customLang}代码在提交时出现了错误，请根据错误信息修正。\n\n题目：\n${question.text}\n\n当前代码（${customLang}）：\n${currentAnswer}\n\n错误信息：\n${errorText}\n\n要求：\n- 只返回修正后的${customLang}代码\n- 代码简洁高效\n- 不要包含任何解释或 Markdown 标记`;
+            } else if (question.type === 'programming') {
+                prompt = `你是一个编程竞赛助手。以下代码在提交时出现了错误，请根据错误信息修正代码。\n\n题目：\n${question.text}\n\n当前代码（${langName}）：\n${currentAnswer}\n\n错误信息：\n${errorText}\n\n要求：\n- 只返回修正后的${langName}代码\n- 代码简洁高效，符合竞赛标准\n- 不要包含任何解释或 Markdown 标记`;
+            } else {
+                prompt = `你是一个智能答题助手。以下答案在提交时出现了错误，请根据错误信息修正。\n\n题目：\n${question.text}\n\n当前答案：\n${currentAnswer}\n\n错误信息：\n${errorText}\n\n请直接返回修正后的答案，不要包含任何 Markdown 标记或其他文字。`;
+            }
+
+            const payload = {
+                model: model,
+                messages: [{ role: 'user', content: prompt }],
+                stream: false
+            };
+
+            GM_xmlhttpRequest({
+                method: 'POST',
+                url: url,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                data: JSON.stringify(payload),
+                onload: function(response) {
+                    if (response.status === 200) {
+                        try {
+                            const res = JSON.parse(response.responseText);
+                            let content = res.choices[0].message.content;
+                            content = content.replace(/```[\w]*\n?/g, '').replace(/```/g, '').trim();
+
+                            currentAnswer = content;
+                            const resultContent = document.getElementById('ai-result-content');
+                            if (resultContent) {
+                                resultContent.textContent = content;
+                            }
+                            resolve(content);
+                        } catch (e) {
+                            reject(new Error('修正结果解析失败'));
+                        }
+                    } else {
+                        reject(new Error(`修正请求失败: ${response.status}`));
+                    }
+                },
+                onerror: function() {
+                    reject(new Error('修正请求网络错误'));
+                }
+            });
+        });
+    }
+
     async function autoFixAnswer() {
         if (!currentAnswer) {
             showStatus('暂无 AI 结果，请先解答题目');
@@ -713,73 +856,14 @@
         showStatus('AI 正在修正...');
         log('发送自动修正请求...');
 
-        const config = getConfig();
-        const url = document.getElementById('cfg-url')?.value.trim() || config.apiUrl;
-        const token = document.getElementById('cfg-token')?.value.trim() || config.apiToken;
-        const model = document.getElementById('cfg-model')?.value.trim() || config.model;
-        const question = getQuestionContext();
-        const langMap = {
-            c: 'C', cpp: 'C++', java: 'Java', python: 'Python',
-            python3: 'Python3', javascript: 'JavaScript', go: 'Go',
-            rust: 'Rust', csharp: 'C#', php: 'PHP', ruby: 'Ruby', sql: 'SQL'
-        };
-        const codeLanguage = document.getElementById('cfg-lang')?.value || config.codeLanguage;
-        const langName = langMap[codeLanguage] || codeLanguage || 'C';
-
-        let prompt = '';
-        if (question.type === 'sql') {
-            prompt = `你是一个SQL专家。以下SQL语句在提交时出现了错误，请根据错误信息修正。\n\n题目：\n${question.text}\n\n当前SQL：\n${currentAnswer}\n\n错误信息：\n${errorInfo.value.trim()}\n\n要求：\n- 只返回修正后的SQL语句\n- SQL简洁高效\n- 不要包含任何解释或 Markdown 标记`;
-        } else if (question.type === 'custom') {
-            const customLang = document.getElementById('cfg-custom-lang')?.value?.trim() || '代码';
-            prompt = `你是一个编程助手。以下${customLang}代码在提交时出现了错误，请根据错误信息修正。\n\n题目：\n${question.text}\n\n当前代码（${customLang}）：\n${currentAnswer}\n\n错误信息：\n${errorInfo.value.trim()}\n\n要求：\n- 只返回修正后的${customLang}代码\n- 代码简洁高效\n- 不要包含任何解释或 Markdown 标记`;
-        } else if (question.type === 'programming') {
-            prompt = `你是一个编程竞赛助手。以下代码在提交时出现了错误，请根据错误信息修正代码。\n\n题目：\n${question.text}\n\n当前代码（${langName}）：\n${currentAnswer}\n\n错误信息：\n${errorInfo.value.trim()}\n\n要求：\n- 只返回修正后的${langName}代码\n- 代码简洁高效，符合竞赛标准\n- 不要包含任何解释或 Markdown 标记`;
-        } else {
-            prompt = `你是一个智能答题助手。以下答案在提交时出现了错误，请根据错误信息修正。\n\n题目：\n${question.text}\n\n当前答案：\n${currentAnswer}\n\n错误信息：\n${errorInfo.value.trim()}\n\n请直接返回修正后的答案，不要包含任何 Markdown 标记或其他文字。`;
+        try {
+            await callAutoFixAPI(errorInfo.value.trim());
+            showStatus('AI 已修正答案，点击「填入答案」使用');
+            log('自动修正完成');
+        } catch (e) {
+            showStatus(e.message);
+            log(e.message);
         }
-
-        const payload = {
-            model: model,
-            messages: [{ role: 'user', content: prompt }],
-            stream: false
-        };
-
-        GM_xmlhttpRequest({
-            method: 'POST',
-            url: url,
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            data: JSON.stringify(payload),
-            onload: function(response) {
-                if (response.status === 200) {
-                    try {
-                        const res = JSON.parse(response.responseText);
-                        let content = res.choices[0].message.content;
-                        content = content.replace(/```[\w]*\n?/g, '').replace(/```/g, '').trim();
-
-                        currentAnswer = content;
-                        const resultContent = document.getElementById('ai-result-content');
-                        if (resultContent) {
-                            resultContent.textContent = content;
-                        }
-                        showStatus('AI 已修正答案，点击「填入答案」使用');
-                        log('自动修正完成');
-                    } catch (e) {
-                        showStatus('修正结果解析失败');
-                        log('修正结果解析失败: ' + e.message);
-                    }
-                } else {
-                    showStatus(`修正请求失败: ${response.status}`);
-                    log(`修正请求失败: ${response.status}`);
-                }
-            },
-            onerror: function() {
-                showStatus('修正请求网络错误');
-                log('修正请求网络错误');
-            }
-        });
     }
 
     async function simulateManualInput() {
@@ -804,6 +888,16 @@
 
     async function runAI(isAuto) {
         if (isAuto && !state.isAutoRunning) return;
+
+        // 清除上一次的 AI 结果
+        const resultContent = document.getElementById('ai-result-content');
+        const resultBox = document.getElementById('ai-result-box');
+        if (resultContent) resultContent.textContent = '等待 AI 返回结果...';
+        if (resultBox) resultBox.classList.remove('visible');
+        const errorInput = document.getElementById('ai-error-input');
+        if (errorInput) errorInput.value = '';
+        currentAnswer = '';
+        currentQuestionType = '';
 
         const question = await detectQuestionWithRetry();
         if (!question.rawQuestion && question.type === 'unknown') {
@@ -877,8 +971,70 @@
                 state.autoLoopTimer = setTimeout(async () => {
                     if (question.type === 'programming') {
                         submitAnswer();
-                        await sleep(500);
+
+                        // 等待判题结果
+                        showStatus('已提交，等待判题结果...');
+                        let judgeResult = await waitForJudgeResult(30000);
+
+                        if (judgeResult) {
+                            let status = parseJudgeStatus(judgeResult.text);
+                            log(`判题结果: ${status.status} - ${judgeResult.text}`);
+
+                            if (!status.passed && status.canFix) {
+                                showStatus(`判题失败: ${status.status}，正在自动修正...`);
+
+                                // 自动修正，最多 2 次
+                                for (let fixAttempt = 1; fixAttempt <= 2 && state.isAutoRunning; fixAttempt++) {
+                                    log(`第 ${fixAttempt} 次自动修正...`);
+
+                                    try {
+                                        await callAutoFixAPI(judgeResult.text);
+                                        await fillCurrentAnswer();
+                                        await sleep(1000);
+                                        submitAnswer();
+
+                                        showStatus('已重新提交，等待判题结果...');
+                                        judgeResult = await waitForJudgeResult(30000);
+                                        if (!judgeResult) {
+                                            showStatus('未检测到判题结果，进入下一题...');
+                                            break;
+                                        }
+
+                                        status = parseJudgeStatus(judgeResult.text);
+                                        log(`第 ${fixAttempt} 次修正后判题: ${status.status} - ${judgeResult.text}`);
+
+                                        if (status.passed) {
+                                            showStatus('修正后通过！进入下一题...');
+                                            break;
+                                        } else if (!status.canFix) {
+                                            showStatus(`修正后仍失败 (${status.status})，进入下一题...`);
+                                            break;
+                                        }
+
+                                        // 继续下一轮修正
+                                        if (fixAttempt < 2) {
+                                            showStatus(`修正后仍失败 (${status.status})，继续修正...`);
+                                        }
+                                    } catch (e) {
+                                        log(`自动修正失败: ${e.message}`);
+                                        showStatus(`自动修正失败: ${e.message}，进入下一题...`);
+                                        break;
+                                    }
+                                }
+                            } else if (status.passed) {
+                                showStatus('判题通过！进入下一题...');
+                            } else {
+                                showStatus(`判题失败 (${status.status})，无法自动修正，进入下一题...`);
+                            }
+                        } else {
+                            showStatus('未检测到判题结果，进入下一题...');
+                        }
+
+                        await sleep(1000);
                     }
+
+                    if (!state.isAutoRunning) return;
+
                     if (nextQuestion()) {
                         setTimeout(() => runAI(true), 1000);
                     } else {
