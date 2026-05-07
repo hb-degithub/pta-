@@ -572,7 +572,7 @@
                 '无法完成编译',
                 '未能对评测系统的数据返回正确的结果',
                 '格式不符合要求',
-                '运行错误', '段错误',
+                '运行时发生错误', '段错误', '堆栈溢出',
                 '未能在规定时间内运行结束',
                 '超时', 'Time Limit',
                 '使用了超过限制的内存', '内存', '超限', 'Memory Limit',
@@ -656,7 +656,7 @@
         if ((text.includes('内存') && text.includes('超限')) || text.includes('Memory Limit')) {
             return { passed: false, status: 'memory_limit', canFix: true };
         }
-        if (text.includes('运行错误') || text.includes('Runtime Error') || text.includes('段错误')) {
+        if (text.includes('运行错误') || text.includes('运行时发生错误') || text.includes('Runtime Error') || text.includes('段错误') || text.includes('堆栈溢出')) {
             return { passed: false, status: 'runtime_error', canFix: true };
         }
         if (text.includes('错误')) {
