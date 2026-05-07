@@ -573,6 +573,7 @@
                 '未能对评测系统的数据返回正确的结果',
                 '格式不符合要求',
                 '运行错误', '段错误',
+                '未能在规定时间内运行结束',
                 '超时', 'Time Limit',
                 '内存', '超限', 'Memory Limit',
                 'Accepted', 'Compile Error', 'Wrong Answer', 'Runtime Error',
